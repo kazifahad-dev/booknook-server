@@ -21,7 +21,6 @@ async function run() {
     await client.db("booknookDB").command({ ping: 1 });
     console.log("MongoDB connected successfully");
 
-    // পরের ধাপগুলোতে এখানে collection আর route যোগ হবে
     const db = client.db("booknookDB");
     const booksCollection = db.collection("books");
 
@@ -62,14 +61,7 @@ async function run() {
         userEmail,
       } = req.body;
 
-      if (
-        !title ||
-        !author ||
-        !category ||
-        !image ||
-        !description ||
-        !userEmail
-      ) {
+      if (!title || !author || !category || !image || !description || !userEmail) {
         return res.status(400).send({ message: "All fields are required" });
       }
 
@@ -95,6 +87,53 @@ async function run() {
 
       const result = await booksCollection.insertOne(newBook);
       res.status(201).send(result);
+    });
+
+    // বই আপডেট
+    app.patch("/books/:id", async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid book id" });
+      }
+
+      const { title, author, category, image, description } = req.body;
+      const updatedFields = { title, author, category, image, description };
+
+      // যে ঘরগুলো পাঠানো হয়নি (undefined) সেগুলো বাদ দিই
+      Object.keys(updatedFields).forEach((key) => {
+        if (updatedFields[key] === undefined) delete updatedFields[key];
+      });
+
+      if (Object.keys(updatedFields).length === 0) {
+        return res.status(400).send({ message: "Nothing to update" });
+      }
+
+      const result = await booksCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedFields },
+      );
+
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: "Book not found" });
+      }
+      res.send(result);
+    });
+
+    // বই ডিলিট
+    app.delete("/books/:id", async (req, res) => {
+      const id = req.params.id;
+      if (!ObjectId.isValid(id)) {
+        return res.status(400).send({ message: "Invalid book id" });
+      }
+
+      const result = await booksCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      if (result.deletedCount === 0) {
+        return res.status(404).send({ message: "Book not found" });
+      }
+      res.send(result);
     });
   } catch (error) {
     console.error("MongoDB connection failed:", error.message);
