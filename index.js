@@ -38,7 +38,7 @@ app.get("/", (req, res) => {
   res.send("BookNook server is running");
 });
 
-// ==================== BOOKS ====================
+
 
 app.get("/books", async (req, res) => {
   const limit = parseInt(req.query.limit) || 0;
@@ -145,7 +145,7 @@ app.delete("/books/:id", async (req, res) => {
   res.send(result);
 });
 
-// ==================== BORROWS ====================
+
 
 app.post("/borrows", async (req, res) => {
   const { bookId, userName, userEmail } = req.body;
