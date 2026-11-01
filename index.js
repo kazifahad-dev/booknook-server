@@ -8,16 +8,13 @@ const { MongoClient, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection
 const client = new MongoClient(process.env.MONGODB_URI);
 let booksCollection;
 let borrowsCollection;
 
-// সংযোগ একবারই হয়, পরের request-এ আগেরটাই কাজে লাগে
 async function connectDB() {
   if (booksCollection) return;
   await client.connect();
@@ -27,7 +24,6 @@ async function connectDB() {
   console.log("MongoDB connected successfully");
 }
 
-// প্রতিটা request-এর আগে নিশ্চিত করি ডাটাবেস সংযুক্ত
 app.use(async (req, res, next) => {
   try {
     await connectDB();
@@ -44,18 +40,19 @@ app.get("/", (req, res) => {
 
 // ==================== BOOKS ====================
 
-// সব বই (নতুন আগে)। ?limit=6 দিলে শুধু ৬টা আসবে
 app.get("/books", async (req, res) => {
   const limit = parseInt(req.query.limit) || 0;
+  const email = req.query.email;
+  const filter = email ? { userEmail: email } : {};
+
   const books = await booksCollection
-    .find()
+    .find(filter)
     .sort({ addedAt: -1 })
     .limit(limit)
     .toArray();
   res.send(books);
 });
 
-// একটা বই
 app.get("/books/:id", async (req, res) => {
   const id = req.params.id;
   if (!ObjectId.isValid(id)) {
@@ -68,7 +65,6 @@ app.get("/books/:id", async (req, res) => {
   res.send(book);
 });
 
-// নতুন বই যোগ
 app.post("/books", async (req, res) => {
   const {
     title,
@@ -87,9 +83,7 @@ app.post("/books", async (req, res) => {
 
   const copies = Number(totalCopies);
   if (!copies || copies < 1) {
-    return res
-      .status(400)
-      .send({ message: "Total copies must be at least 1" });
+    return res.status(400).send({ message: "Total copies must be at least 1" });
   }
 
   const newBook = {
@@ -109,7 +103,6 @@ app.post("/books", async (req, res) => {
   res.status(201).send(result);
 });
 
-// বই আপডেট
 app.patch("/books/:id", async (req, res) => {
   const id = req.params.id;
   if (!ObjectId.isValid(id)) {
@@ -119,7 +112,6 @@ app.patch("/books/:id", async (req, res) => {
   const { title, author, category, image, description } = req.body;
   const updatedFields = { title, author, category, image, description };
 
-  // যে ঘরগুলো পাঠানো হয়নি (undefined) সেগুলো বাদ দিই
   Object.keys(updatedFields).forEach((key) => {
     if (updatedFields[key] === undefined) delete updatedFields[key];
   });
@@ -139,7 +131,6 @@ app.patch("/books/:id", async (req, res) => {
   res.send(result);
 });
 
-// বই ডিলিট
 app.delete("/books/:id", async (req, res) => {
   const id = req.params.id;
   if (!ObjectId.isValid(id)) {
@@ -156,14 +147,11 @@ app.delete("/books/:id", async (req, res) => {
 
 // ==================== BORROWS ====================
 
-// বই ধার নেওয়া
 app.post("/borrows", async (req, res) => {
   const { bookId, userName, userEmail } = req.body;
 
   if (!bookId || !userEmail) {
-    return res
-      .status(400)
-      .send({ message: "Book id and email are required" });
+    return res.status(400).send({ message: "Book id and email are required" });
   }
   if (!ObjectId.isValid(bookId)) {
     return res.status(400).send({ message: "Invalid book id" });
@@ -174,7 +162,6 @@ app.post("/borrows", async (req, res) => {
     return res.status(404).send({ message: "Book not found" });
   }
 
-  // একই বই দুইবার ধার নেওয়া যাবে না
   const alreadyBorrowed = await borrowsCollection.findOne({
     bookId: new ObjectId(bookId),
     userEmail,
@@ -185,7 +172,6 @@ app.post("/borrows", async (req, res) => {
       .send({ message: "You have already borrowed this book" });
   }
 
-  // কপি থাকলে তবেই ১টা কমাও (খোঁজা আর কমানো একসাথে, এক ধাপে)
   const decrease = await booksCollection.updateOne(
     { _id: new ObjectId(bookId), availableCopies: { $gt: 0 } },
     { $inc: { availableCopies: -1 } },
@@ -196,7 +182,6 @@ app.post("/borrows", async (req, res) => {
       .send({ message: "This book is not available right now" });
   }
 
-  // ফেরত দেওয়ার তারিখ: আজ থেকে ৭ দিন পর
   const borrowDate = new Date();
   const returnDate = new Date();
   returnDate.setDate(returnDate.getDate() + 7);
@@ -215,7 +200,6 @@ app.post("/borrows", async (req, res) => {
   res.status(201).send(result);
 });
 
-// একজন ইউজারের ধার নেওয়া বইগুলো
 app.get("/borrows", async (req, res) => {
   const email = req.query.email;
   if (!email) {
@@ -228,7 +212,6 @@ app.get("/borrows", async (req, res) => {
   res.send(borrows);
 });
 
-// বই ফেরত দেওয়া
 app.delete("/borrows/:id", async (req, res) => {
   const id = req.params.id;
   if (!ObjectId.isValid(id)) {
@@ -249,12 +232,10 @@ app.delete("/borrows/:id", async (req, res) => {
   res.send({ message: "Book returned successfully" });
 });
 
-// লোকালে server চালু করি। Vercel নিজে চালায়, তাই সেখানে listen লাগে না
 if (!process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`Server running on port ${port}`);
   });
 }
 
-// Vercel-এর জন্য app-কে বাইরে দেওয়া
 module.exports = app;
